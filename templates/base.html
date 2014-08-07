@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link type="text/css" rel="stylesheet" href="/static/main.css" />
+	<title>/Zakk's Wiki/</title>
+</head>
+<body>
+	<a href="/" class="main-title">
+	Zakk's Wiki
+	</a>
+	<div class="login-area">
+		{% if logged_in %}
+			<a class="login-link" href="/_edit{{path}}">edit</a>
+			|
+			{{username}} (<a class="login-link" href="/logout">Logout</a>)
+		{% else %}
+			<a class="login-link" href="/login">Login</a>
+			|
+			<a class="login-link" href="/signup">Sign Up</a>
+		{% endif %}
+	</div>
+	<div id="content">
+		{{content}}
+		{% block content %}
+		{% endblock %}
+	</div>
+	<span>{{uid}}</span>
+</body>
+</html>

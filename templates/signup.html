@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="signup">
+<form method="post">
+	<label for="username">Username
+		<input type="text" name="username" id="signup-username" value="">
+	</label>
+	<label for="password">Password
+		<input type="password" name="password" id="signup-password" value="">
+	</label>
+	<label for="verify">Re-enter
+		<input type="password" name="verify" id="signup-verify" value="">
+	</label>
+	<label for="email">Email
+		<input type="text" name="email" id="signup-email" value="">
+	</label>
+	<div class="clear"></div>
+	<input id="signup-button" type="submit" value="Sign Up">
+</form>
+</section>
+{% endblock %}

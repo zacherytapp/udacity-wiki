@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+		<section class="login">
+		<center><h2 style="color: white">Farts</h2></center>
+		<form method="post">
+					<label for="username">Username
+						<input type="text" name="username" id="login-username" value="">
+					</label>
+					<label for="password">Password
+						<input type="password" name="password" id="login-password" value="">
+					</label>
+			<div class="clear"></div>
+			<div class="error">	
+			</div>
+			<input id="login-button" type="submit" value="Sign In">
+		</form>
+		</section>
+{% endblock %}
