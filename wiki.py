@@ -26,61 +26,59 @@ jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
 
 #Utilities
 #------------------------------------------------------
-#Makes a secure value based on a supplied global secret
-#variable and a supplied value.
 def make_secure_val(val):
 	return '%s|%s' % (val, hmac.new(SECRET, val).hexdigest())
 
-#Checks the secure value against itself
 def check_secure_val(secure_val):
 	val = secure_val.split('|')[0]
 	if secure_val == make_secure_val(val):
 		return val
 
+def wiki_key(name = 'default'):
+	return db.Key.from_path('wikis', name)
+
 #User Utilities
 #-----------------------------------------------------------
-#Makes a random salt string that gets hashed with passwords
 def make_salt(length = 5):
 	return ''.join(random.choice(letters) for x in xrange(length))
 
-#Checks for a salt - if one is present, this function
-#hashes a password/username combo with the salt.
 def make_pw_hash(name, pw, salt = None):
 	if not salt:
 		salt = make_salt()
 	h = hashlib.sha256(name + pw + salt).hexdigest()
 	return '%s|%s' % (salt, h)
 
-#Validates a username and password - used on /login.
-#h is a salt and hashed password - retrieved from the function above
-def valid_pw(name, password, h):
+def is_valid_password_for_user(name, password, h):
 	salt = h.split('|')[0]
 	return h == make_pw_hash(name, password, salt)
 
 def users_key(group = 'default'):
 	return db.Key.from_path('users', group)
 
-#Takes a username input and checks it against the USER_RE
-#regular expression. Should be alpha-numeric and can contain
-#between 3 and 20 characters
 USER_RE = re.compile(r"^[a-zA-Z0-9_-]{3,20}$")
 def valid_username(username):
 	return username and USER_RE.match(username)
 
-#Takes a password input and checks it against the PASS_RE
-#regular expression. Password should be between 3 and 20 
-#characters.
 PASS_RE = re.compile(r"^.{3,20}$")
 def valid_password(password):
 	return password and PASS_RE.match(password)
 
-#Takes an email input and checks it agains the EMAIL_RE
-#regular expression. If there is no email, it will still pass
-#but if there is an email, it should match the RE.
 EMAIL_RE = re.compile(r"^[\S]+@[\S]+\.[\S]+$")
 def valid_email(email):
 	return not email or EMAIL_RE.match(email)
 
+def user_is_logged_in(user_id_cookie):
+	logged_in = False
+	user = None
+	uid = user_id_cookie
+	if uid and uid != "":
+		logged_in = True
+		u = User.by_id(int(uid))
+		user = u.name
+	return logged_in, user
+
+#User DB Construction
+#----------------------------------------------------
 class User(db.Model):
 	name = db.StringProperty(required = True)
 	pw_hash = db.StringProperty(required = True)
@@ -106,12 +104,11 @@ class User(db.Model):
 	@classmethod
 	def login(cls, name, pw):
 		u = cls.by_name(name)
-		if u and valid_pw(name, pw, u.pw_hash):
+		if u and is_valid_password_for_user(name, pw, u.pw_hash):
 			return u
 
-def wiki_key(name = 'default'):
-	return db.Key.from_path('wikis', name)
-
+#Wiki DB Construction
+#---------------------------------------------------------
 class Wiki(db.Model):
 	content = db.TextProperty(required = False)
 	url_path = db.StringProperty(required = False)
@@ -126,9 +123,17 @@ class Wiki(db.Model):
 	def by_path_name(cls, path_name):
 		w = Wiki.all().filter('url_path =', path_name).get()
 		return w
+#Wiki Utilities
+#----------------------------------------------------------
+def get_wiki_content(path):
+	w = Wiki.by_path_name(path)
+	existing_content = ""
+	if w:
+		existing_content = w.content
+	return existing_content, path
 
-#The handler that directs to the templates created in /templates.
-#I'm not totally sure how this works. Need to read Jinja2 docs.
+#Handlers & Handler Logic
+#----------------------------------------------------------
 class WikiHandler(webapp2.RequestHandler):
 	def write(self, *a, **kw):
 		self.response.out.write(*a, **kw)
@@ -185,12 +190,11 @@ class Signup(WikiHandler):
 
 	def post(self):
 		key = 'user_hashes'
-		have_error = False #Tracks signup errors throughout the logic
+		have_error = False
 		self.username = self.request.get('username')
 		self.password = self.request.get('password')
 		self.verify = self.request.get('verify')
 		self.email = self.request.get('email')
-		password_hash = make_pw_hash(self.username, self.password)
 
 		params = dict(username = self.username,
 					  email = self.email)
@@ -202,6 +206,7 @@ class Signup(WikiHandler):
 		if not valid_password(self.password):
 			params['error_password'] = "That password sucks. Pick a new one."
 			have_error = True
+
 		elif self.password != self.verify:
 			params['error_verify'] = "Your passwords don't match. Learn to type."
 			have_error = True
@@ -212,11 +217,11 @@ class Signup(WikiHandler):
 
 		if have_error:
 			self.render('signup.html', **params)
+
 		else:
 			password_hash = make_pw_hash(self.username, self.password)
 			self.set_password_cookie('pw-hash', password_hash)
 			memcache.set(key, password_hash)
-			time.sleep(0.5)
 			self.done()
 
 
@@ -229,7 +234,6 @@ class Register(Signup):
 		else:
 			u = User.register(self.username, self.password, self.email)
 			u.put()
-
 			self.login(u)
 			self.redirect('/')
 
@@ -257,55 +261,38 @@ class Login(WikiHandler):
 
 class EditPage(WikiHandler):
 	def get(self, url):
-		logged_in = False
-		user = None
+		logged_in, user = user_is_logged_in(self.read_secure_cookie('user_id'))
 		path = self.request.path
 		unquoted_path = urllib2.unquote(path)
-		uid = self.read_secure_cookie('user_id')
-		if uid and uid != "":
-			logged_in = True
-			u = User.by_id(int(uid))
-			user = u.name
 		if logged_in:
 			self.render('editpage.html', logged_in = logged_in, username = user)
 		else:
 			self.redirect('/signup')
+
 	def post(self, url):
 		post_content = self.request.get('wiki_content')
 		path = self.request.path[6:]
-		w = Wiki.all().filter("url_path =", self.request.path[6:]).get()
+		w = Wiki.all().filter("url_path =", path).get()
 		if w:
 			w.content = post_content
 			w.put()
 		else:
 			wiki_post = Wiki(content = post_content, url_path = path)
 			wiki_post.put()
-		time.sleep(0.5)
-		self.redirect(path)    	
+		time.sleep(0.5) #localhost has some lag writing values to the datastore
+		self.redirect(path) 
 
 class WikiPage(WikiHandler):
     def get(self, PAGE_RE):
-		path = self.request.path
+		existing_content, path = get_wiki_content(self.request.path)
 		unquoted_path = urllib2.unquote(path)
-		w = Wiki.by_path_name(path)
-		existing_content = ""
-		logged_in = False
-		user = None
-		uid = self.read_secure_cookie('user_id')
-		if uid and uid != "":
-			logged_in = True
-			u = User.by_id(int(uid))
-			user = u.name
-		if w:
-			existing_content = w.content
-		elif user != None:
-			self.redirect('/_edit' + PAGE_RE)
+		logged_in, user = user_is_logged_in(self.read_secure_cookie('user_id'))
 		self.render('base.html', logged_in = logged_in, username = user, path = unquoted_path, content = existing_content)
 
 class Logout(WikiHandler):
 	def get(self):
 		self.logout()
-		time.sleep(0.5)
+		time.sleep(0.5) #logout process finishes after redirect (only in localhost)
 		self.redirect('/')
     			
 
